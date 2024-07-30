@@ -1,0 +1,4 @@
+#!/usr/bin/env ruby
+require "game_log_analyze"
+
+GameLogAnalyze::CLI.start(ARGV)
