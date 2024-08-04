@@ -5,6 +5,7 @@ require "thor"
 require "rainbow"
 require "time"
 require "debug"
+require "tty-box"
 
 STAR_WARS_GALAXIES_REGEX = /^\[Combat\]\s+(\d{2}:\d{2}:\d{2})\s+.*\s(\d+)\spoints of damage.*$/.freeze
 
@@ -13,7 +14,7 @@ STAR_WARS_GALAXIES_REGEX = /^\[Combat\]\s+(\d{2}:\d{2}:\d{2})\s+.*\s(\d+)\spoint
 #
 module GameLogAnalyze
   def self.total_damage(damage_time_points)
-    damage_time_points.map { |x| x[1] }.inject(:+)
+    damage_time_points.map { |x| x[1] }.inject(:+) || 0
   end
 
   def self.damage_per_second(damage_time_points, end_time = Time.now)
@@ -59,20 +60,10 @@ module GameLogAnalyze
 
     print "\e[H\e[2J"
 
-    dps_label = Rainbow("DPS:").blue.bright.underline
-    dps_value = Rainbow(dps).green.bright
-
-    total_label = Rainbow("Total:").blue.bright.underline
-    total_value = Rainbow("#{total} over #{data_points.size} samples").green.bright
-
-    average_hit_label = Rainbow("Average Hit:").blue.bright.underline
-    average_hit_value = Rainbow(average_hit).green.bright
-
     puts Rainbow("Game Log Analyzer").red.bright.underline
-    puts "-----------------------"
-    puts "#{dps_label} #{dps_value}"
-    puts "#{total_label} #{total_value}"
-    puts "#{average_hit_label} #{average_hit_value}"
+    puts TTY::Box.frame(title: { top_left: "DPS" }) { Rainbow(dps).green.bright }
+    puts TTY::Box.frame(title: { top_left: "Total" }) { Rainbow(total).green.bright }
+    puts TTY::Box.frame(title: { top_left: "Average Hit" }) { Rainbow(average_hit).green.bright }
   end
 
   class Error < StandardError; end

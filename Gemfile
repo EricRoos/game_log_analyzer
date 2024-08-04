@@ -14,3 +14,5 @@ gem "rubocop", "~> 1.21"
 gem "thor", "~> 1.3"
 
 gem "rainbow", "~> 3.1"
+
+gem "tty-box", "~> 0.7.0"
