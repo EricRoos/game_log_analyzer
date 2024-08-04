@@ -16,3 +16,5 @@ gem "thor", "~> 1.3"
 gem "rainbow", "~> 3.1"
 
 gem "tty-box", "~> 0.7.0"
+
+gem "tty-table", "~> 0.12.0"

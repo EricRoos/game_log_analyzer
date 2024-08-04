@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
+# 0G
+
 require_relative "game_log_analyze/version"
 require "thor"
 require "rainbow"
 require "time"
 require "debug"
 require "tty-box"
+require "tty-table"
 
 STAR_WARS_GALAXIES_REGEX = /^\[Combat\]\s+(\d{2}:\d{2}:\d{2})\s+.*\s(\d+)\spoints of damage.*$/.freeze
 
@@ -61,9 +64,18 @@ module GameLogAnalyze
     print "\e[H\e[2J"
 
     puts Rainbow("Game Log Analyzer").red.bright.underline
-    puts TTY::Box.frame(title: { top_left: "DPS" }) { Rainbow(dps).green.bright }
-    puts TTY::Box.frame(title: { top_left: "Total" }) { Rainbow(total).green.bright }
-    puts TTY::Box.frame(title: { top_left: "Average Hit" }) { Rainbow(average_hit).green.bright }
+
+    puts TTY::Box.frame(padding: 3, title: { top_left: "Stats from log" }) {
+      TTY::Table.new([
+                       Rainbow("DPS").blue,
+                       Rainbow("Total").blue,
+                       Rainbow("Average Hit").blue
+                     ], [[
+                       Rainbow(dps.round(2)).green,
+                       Rainbow(total).green,
+                       Rainbow(average_hit).green
+                     ]]).render(:basic)
+    }
   end
 
   class Error < StandardError; end
