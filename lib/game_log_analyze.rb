@@ -1,12 +1,12 @@
 # frozen_string_literal: true
 
-require_relative "game_log_analyze/version"
-require "thor"
-require "rainbow"
-require "time"
-require "debug"
-require "tty-box"
-require "tty-table"
+require_relative 'game_log_analyze/version'
+require 'thor'
+require 'rainbow'
+require 'time'
+require 'debug'
+require 'tty-box'
+require 'tty-table'
 
 #
 # Entry point for the GameLogAnalyze module
@@ -107,7 +107,6 @@ module GameLogAnalyze
     def notify(message)
       can_handle = ->(subscriber) { subscriber.can_handle?(message) }
       update = ->(subscriber) { subscriber.update(message) }
-
       @subcribers.select(&can_handle).each(&update)
     end
   end
@@ -117,11 +116,15 @@ module GameLogAnalyze
   # interface for the GameLogObserver
   #
   class GameLogSubscriber
+    def initialize(&on_update)
+      @on_update = on_update
+    end
+
     def can_handle?(message)
       raise NotImplementedError
     end
 
-    def update
+    def update(message)
       raise NotImplementedError
     end
   end
@@ -142,9 +145,8 @@ module GameLogAnalyze
     attr_reader :damage_time_points
 
     def initialize(&on_update)
-      super()
+      super
       @damage_time_points = []
-      @on_update = on_update
     end
 
     def current_value
@@ -152,10 +154,10 @@ module GameLogAnalyze
     end
 
     def can_handle?(message)
+      return true if message.nil?
+
       case message
-      in DamageDealtDataLogEvent => _
-        true
-      in nil
+      in DamageDealtDataLogEvent
         true
       else
         false
@@ -182,17 +184,34 @@ module GameLogAnalyze
   # This class is responsible for calculating the total damage given the
   # damage time points
   #
-  class TotalDamageSubscriber < GameDamageSubscriber
-    def current_value
-      total_damage
+  class TotalDamageSubscriber < GameLogSubscriber
+    attr_accessor :total_damage
+
+    def initialize(&on_update)
+      super
+      @total_damage = 0
     end
 
-    def total_damage
-      GameLogAnalyze.total_damage(damage_time_points)
+    def can_handle?(message)
+      return true if message.nil?
+
+      case message
+      in DamageDealtDataLogEvent
+        true
+      else
+        false
+      end
     end
 
-    def trim_values?
-      false
+    def update(message)
+      factor = 1000.0
+      @total_damage += case message
+                       in DamageDealtDataLogEvent => damage_dealt_data_log_event
+                         (damage_dealt_data_log_event.data || 0) / factor
+                       else
+                         0
+                       end
+      @on_update.call((total_damage * factor).to_i)
     end
   end
 
@@ -216,13 +235,34 @@ module GameLogAnalyze
   # This class is responsible for calculating the average hit given the
   # damage time points
   #
-  class AverageHitSubscriber < GameDamageSubscriber
-    def current_value
-      average_hit
+  class AverageHitSubscriber < GameLogSubscriber
+    def initialize(&on_update)
+      super
+      @hit_sum = 0
+      @hit_count = 0
     end
 
-    def average_hit
-      GameLogAnalyze.average_hit(damage_time_points)
+    def can_handle?(message)
+      return false if message.nil?
+
+      case message
+      in DamageDealtDataLogEvent
+        true
+      else
+        false
+      end
+    end
+
+    def update(message)
+      return if message.nil?
+
+      factor = 1000.0
+      case message
+      in DamageDealtDataLogEvent => damage_dealt_data_log_event
+        @hit_sum += (damage_dealt_data_log_event.data.to_f / factor)
+        @hit_count += 1
+        @on_update.call((@hit_sum / @hit_count) * factor)
+      end
     end
   end
 
@@ -231,13 +271,33 @@ module GameLogAnalyze
   # This class is responsible for calculating the minimum hit given the
   # damage time points
   #
-  class MinimumHitSubscriber < GameDamageSubscriber
-    def current_value
-      minimum_hit
+  class MinimumHitSubscriber < GameLogSubscriber
+    attr_accessor :minimum_hit
+
+    def initialize(&on_update)
+      super
+      @minimum_hit = nil
     end
 
-    def minimum_hit
-      GameLogAnalyze.minimum_hit(damage_time_points)
+    def can_handle?(message)
+      return false if message.nil?
+
+      case message
+      in DamageDealtDataLogEvent
+        true
+      else
+        false
+      end
+    end
+
+    def update(message)
+      self.minimum_hit = case message
+                         in DamageDealtDataLogEvent => damage_dealt_data_log_event
+                           [minimum_hit, damage_dealt_data_log_event.data].compact.min
+                         else
+                           minimum_hit
+                         end
+      @on_update.call(minimum_hit || 0)
     end
   end
 
@@ -247,12 +307,32 @@ module GameLogAnalyze
   # damage time points
   #
   class MaximumHitSubscriber < GameDamageSubscriber
-    def current_value
-      maximum_hit
+    attr_accessor :maximum_hit
+
+    def initialize(&on_update)
+      super
+      @maximum_hit = nil
     end
 
-    def maximum_hit
-      GameLogAnalyze.maximum_hit(damage_time_points)
+    def can_handle?(message)
+      return false if message.nil?
+
+      case message
+      in DamageDealtDataLogEvent
+        true
+      else
+        false
+      end
+    end
+
+    def update(message)
+      self.maximum_hit = case message
+                         in DamageDealtDataLogEvent => damage_dealt_data_log_event
+                           [maximum_hit, damage_dealt_data_log_event.data].compact.max
+                         else
+                           maximum_hit
+                         end
+      @on_update.call(maximum_hit)
     end
   end
 
@@ -261,11 +341,11 @@ module GameLogAnalyze
   # This class is responsible for tracking the stats for Star Wars Galaxies
   #
   class StarWarsGalaxiesLogAnalyzer < GameLogObserver
-    ATTACK_REGEX = /^\[Combat\]\s+(\d{2}:\d{2}:\d{2})\s+.*you use.*\s(\d+)\spoints of damage.*$/
+    ATTACK_REGEX = /^\[Combat\]\s+(\d{2}:\d{2}:\d{2})\s+.*you use.*\s(\d+)\spoints of damage.*$/.freeze
     attr_accessor :total_damage, :dps, :avg_hit, :minimum_hit, :maximum_hit
 
     def initialize(io)
-      super(io)
+      super
       @total_damage = 0
       @dps = 0
       @avg_hit = 0
@@ -283,13 +363,13 @@ module GameLogAnalyze
 
     # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
     def to_s
-      TTY::Box.frame(padding: 3, title: { top_left: "Stats from log" }) do
+      TTY::Box.frame(padding: 3, title: { top_left: 'Stats from log' }) do
         TTY::Table.new([
-                         Rainbow("DPS").blue,
-                         Rainbow("Total").blue,
-                         Rainbow("AverageHit").blue,
-                         Rainbow("MinHit").blue,
-                         Rainbow("MaxHit").blue
+                         Rainbow('DPS').blue,
+                         Rainbow('Total').blue,
+                         Rainbow('AverageHit').blue,
+                         Rainbow('MinHit').blue,
+                         Rainbow('MaxHit').blue
                        ], [[
                          Rainbow(dps.round(2)).green,
                          Rainbow(total_damage).green,
@@ -345,8 +425,9 @@ module GameLogAnalyze
   # Example:
   # $ game_log_analyze track /path/to/log
   #
+  # rubocop:disable Metrics/MethodLength, Metrics/AbcSize
   class CLI < Thor
-    desc "track FILE_NAME", "track stats for the log at FILE_NAME"
+    desc 'track FILE_NAME', 'track stats for the log at FILE_NAME'
     def track(file_name)
       file = File.new(file_name)
       while file.gets do; end
@@ -357,12 +438,13 @@ module GameLogAnalyze
         next unless last_print.nil? || Time.now - last_print > 1
 
         print "\e[H\e[2J"
-        puts Rainbow("Game Log Analyzer").red.bright.underline
+        puts Rainbow('Game Log Analyzer').red.bright.underline
         puts observer
         last_print = Time.now
       end
     rescue SystemExit, Interrupt
-      puts ""
+      puts ''
     end
   end
+  # rubocop:enable Metrics/MethodLength, Metrics/AbcSize
 end
